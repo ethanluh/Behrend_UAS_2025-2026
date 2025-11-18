@@ -25,7 +25,7 @@ This testing framework allows you to organize and run various hardware/software 
 
 1. Clone the repository:
 ```bash
-git clone <repository-url>
+git clone https://github.com/ethanluh/Behrend_UAS_2025-2026.git
 cd "Jetson Nano Testing"
 ```
 
