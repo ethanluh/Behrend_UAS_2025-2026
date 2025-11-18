@@ -1,2 +1,2 @@
 # Core dependencies for Jetson Nano testing modules
-picamera2>=0.3.12
+opencv-python>=4.8.0
