@@ -1,24 +1,25 @@
 import cv2
 
-def test_camera():
+def gstreamer_pipeline(
+    sensor_id=0,
+    capture_width=1280,
+    capture_height=720,
+    display_width=1280,
+    display_height=720,
+    framerate=30,
+    flip_method=0,
+):
+    return (
+        "nvgstcamera src=%d !" % sensor_id +
+        "video/x-raw, width=(int)%d, height=(int)%d, framerate=(fraction)%d/1 !" % (capture_width, capture_height, framerate) +
+        "nvvidconv flip-method=%d !" % flip_method +
+        "video/x-raw, width=(int)%d, height=(int)%d, format=(string)BGRx !" % (display_width, display_height) +
+        "videoconvert !" +
+        "video/x-raw, format=(string)BGR ! appsink"
+    )
 
-    def gstreamer_pipeline(
-        capture_width=1280,
-        capture_height=720,
-        display_width=1280,
-        display_height=720,
-        framerate=30,
-        flip_method=0,
-    ):
-        return (
-            "nvgstcamera src=0 ! "
-            "video/x-raw, width=(int)%d, height=(int)%d, framerate=(fraction)%d/1 ! "
-            "nvvidconv flip-method=%d ! "
-            "video/x-raw, width=(int)%d, height=(int)%d, format=(string)BGRx ! "
-            "videoconvert ! "
-            "video/x-raw, format=(string)BGR ! appsink"
-            % (capture_width, capture_height, framerate, flip_method, display_width, display_height)
-        )
+def test_camera():
+        
 
     """Test the camera by displaying a live feed."""
     cap = cv2.VideoCapture(gstreamer_pipeline(), cv2.CAP_GSTREAMER)
