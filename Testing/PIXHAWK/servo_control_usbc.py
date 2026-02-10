@@ -1,57 +1,34 @@
-import asyncio
-from mavsdk import System
-from mavsdk.mavlink_passthrough import MavlinkPassthrough
 from pymavlink import mavutil
+import time
 
-async def run():
-    drone = System()
-    await drone.connect(system_address="serial:///dev/ttyACM0:57600")
+# Connect over USB serial
+master = mavutil.mavlink_connection("/dev/ttyACM0", baud=57600)
 
-    async for state in drone.core.connection_state():
-        if state.is_connected:
-            print("Connected")
-            break
+# Wait for heartbeat
+master.wait_heartbeat()
+print("Connected")
 
-    mavlink = MavlinkPassthrough(drone)
-
-    print("Setting AUX 4 (servo 12) to 1500 µs")
-    await mavlink.send_command_long(
+def set_servo(servo, pwm):
+    master.mav.command_long_send(
+        master.target_system,
+        master.target_component,
         mavutil.mavlink.MAV_CMD_DO_SET_SERVO,
-        param1=12,      # servo number (AUX 4)
-        param2=1500,    # PWM
-        param3=0,
-        param4=0,
-        param5=0,
-        param6=0,
-        param7=0,
+        0,
+        servo, pwm,
+        0, 0, 0, 0, 0
     )
 
-    await asyncio.sleep(3)
+print("AUX 4 → 1500 µs")
+set_servo(12, 1500)
+time.sleep(3)
 
-    print("Setting AUX 4 to 1100 µs")
-    await mavlink.send_command_long(
-        mavutil.mavlink.MAV_CMD_DO_SET_SERVO,
-        param1=12,
-        param2=1100,
-        param3=0,
-        param4=0,
-        param5=0,
-        param6=0,
-        param7=0,
-    )
+print("AUX 4 → 1100 µs")
+set_servo(12, 1100)
+time.sleep(3)
 
-    await asyncio.sleep(3)
+print("AUX 4 → 1900 µs")
+set_servo(12, 1900)
+time.sleep(3)
 
-    print("Setting AUX 4 to 1900 µs")
-    await mavlink.send_command_long(
-        mavutil.mavlink.MAV_CMD_DO_SET_SERVO,
-        param1=12,
-        param2=1900,
-        param3=0,
-        param4=0,
-        param5=0,
-        param6=0,
-        param7=0,
-    )
-
-asyncio.run(run())
+print("Stopping")
+set_servo(12, 0)
