@@ -1,44 +1,41 @@
-from pymavlink import mavutil
-import time
+import asyncio
+from mavsdk import System
+from mavsdk.offboard import ActuatorControl, OffboardError
 
-# Connect to Pixhawk
-mav = mavutil.mavlink_connection('/dev/ttyACM0', baud=57600)
-mav.wait_heartbeat()
+async def run():
+    drone = System()
+    await drone.connect(system_address="udp://:14540")
 
-servo_channel = 8  # AUX4
+    async for state in drone.core.connection_state():
+        if state.is_connected:
+            break
 
-# Sweep from 1000 -> 2000 -> 1000 μs
-pwm = 1000
-direction = 1
+    print("Connected")
 
-try:
-    while True:
-        mav.mav.command_long_send(
-            mav.target_system,
-            mav.target_component,
-            mavutil.mavlink.MAV_CMD_DO_SET_SERVO,
-            0,
-            servo_channel,
-            pwm,
-            0,0,0,0,0
+    await drone.action.arm()
+
+    # Actuator array: 8 channels
+    # motor 1 → index 0
+    actuators = [0.0] * 8
+    actuators[0] = 0.5  # 50% throttle
+
+    try:
+        await drone.offboard.set_actuator_control(
+            ActuatorControl(group=0, controls=actuators)
         )
-        pwm += 20 * direction
-        if pwm >= 2000:
-            pwm = 2000
-            direction = -1
-        elif pwm <= 1000:
-            pwm = 1000
-            direction = 1
-        time.sleep(0.05)
-except KeyboardInterrupt:
-    # Return to neutral
-    mav.mav.command_long_send(
-        mav.target_system,
-        mav.target_component,
-        mavutil.mavlink.MAV_CMD_DO_SET_SERVO,
-        0,
-        servo_channel,
-        1500,
-        0,0,0,0,0
+        await drone.offboard.start()
+        print("Actuator control started")
+
+        await asyncio.sleep(3)
+
+    except OffboardError as e:
+        print(e)
+
+    actuators[0] = 0.0
+    await drone.offboard.set_actuator_control(
+        ActuatorControl(group=0, controls=actuators)
     )
-    print("Stopped sweep, servo neutral")
+
+    await drone.action.disarm()
+
+asyncio.run(run())
