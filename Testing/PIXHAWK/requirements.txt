@@ -1,0 +1,2 @@
+# Core dependencies for PIXHAWK testing modules
+mavsdk
