@@ -1,6 +1,5 @@
 import asyncio
 from mavsdk import System
-from mavsdk.offboard import ActuatorControl, OffboardError
 
 async def run():
     drone = System()
@@ -8,34 +7,23 @@ async def run():
 
     async for state in drone.core.connection_state():
         if state.is_connected:
+            print("Connected")
             break
 
-    print("Connected")
+    # AUX 4 = servo 12
+    print("Setting AUX 4 to 1500 µs")
+    await drone.action.set_servo(12, 1500)
+    await asyncio.sleep(3)
 
-    await drone.action.arm()
+    print("Setting AUX 4 to 1100 µs")
+    await drone.action.set_servo(12, 1100)
+    await asyncio.sleep(3)
 
-    # Actuator array: 8 channels
-    # motor 1 → index 0
-    actuators = [0.0] * 8
-    actuators[0] = 0.5  # 50% throttle
+    print("Setting AUX 4 to 1900 µs")
+    await drone.action.set_servo(12, 1900)
+    await asyncio.sleep(3)
 
-    try:
-        await drone.offboard.set_actuator_control(
-            ActuatorControl(group=0, controls=actuators)
-        )
-        await drone.offboard.start()
-        print("Actuator control started")
-
-        await asyncio.sleep(3)
-
-    except OffboardError as e:
-        print(e)
-
-    actuators[0] = 0.0
-    await drone.offboard.set_actuator_control(
-        ActuatorControl(group=0, controls=actuators)
-    )
-
-    await drone.action.disarm()
+    print("Stopping output")
+    await drone.action.set_servo(12, 0)
 
 asyncio.run(run())
