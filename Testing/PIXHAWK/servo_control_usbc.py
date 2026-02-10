@@ -1,6 +1,6 @@
 import asyncio
 from mavsdk import System
-from mavsdk.mavlink import MavlinkPassthrough
+from mavsdk.mavlink_passthrough import MavlinkPassthrough
 from pymavlink import mavutil
 
 async def run():
