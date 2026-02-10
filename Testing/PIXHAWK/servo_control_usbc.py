@@ -1,11 +1,18 @@
+import os
+os.environ["MAVLINK_DIALECT"] = "common"
+
 from pymavlink import mavutil
 import time
 
-# Connect over USB serial
-master = mavutil.mavlink_connection("/dev/ttyACM0", baud=57600)
+# Connect over USB
+master = mavutil.mavlink_connection(
+    "/dev/ttyACM0",
+    baud=57600,
+    autoreconnect=True
+)
 
-# Wait for heartbeat
-master.wait_heartbeat()
+print("Waiting for heartbeat...")
+master.wait_heartbeat(timeout=10)
 print("Connected")
 
 def set_servo(servo, pwm):
@@ -18,6 +25,7 @@ def set_servo(servo, pwm):
         0, 0, 0, 0, 0
     )
 
+# AUX 4 = servo 12
 print("AUX 4 → 1500 µs")
 set_servo(12, 1500)
 time.sleep(3)
