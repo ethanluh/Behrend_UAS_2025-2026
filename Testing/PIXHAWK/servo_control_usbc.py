@@ -4,7 +4,7 @@ from mavsdk.offboard import ActuatorControl, OffboardError
 
 async def run():
     drone = System()
-    await drone.connect(system_address="udp://:14540")
+    await drone.connect(system_address="serial:///dev/ttyACM0:57600")
 
     async for state in drone.core.connection_state():
         if state.is_connected:
