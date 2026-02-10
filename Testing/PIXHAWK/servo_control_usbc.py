@@ -1,5 +1,7 @@
 import asyncio
 from mavsdk import System
+from mavsdk.mavlink import MavlinkPassthrough
+from pymavlink import mavutil
 
 async def run():
     drone = System()
@@ -10,20 +12,46 @@ async def run():
             print("Connected")
             break
 
-    # AUX 4 = servo 12
-    print("Setting AUX 4 to 1500 µs")
-    await drone.action.set_servo(12, 1500)
+    mavlink = MavlinkPassthrough(drone)
+
+    print("Setting AUX 4 (servo 12) to 1500 µs")
+    await mavlink.send_command_long(
+        mavutil.mavlink.MAV_CMD_DO_SET_SERVO,
+        param1=12,      # servo number (AUX 4)
+        param2=1500,    # PWM
+        param3=0,
+        param4=0,
+        param5=0,
+        param6=0,
+        param7=0,
+    )
+
     await asyncio.sleep(3)
 
     print("Setting AUX 4 to 1100 µs")
-    await drone.action.set_servo(12, 1100)
+    await mavlink.send_command_long(
+        mavutil.mavlink.MAV_CMD_DO_SET_SERVO,
+        param1=12,
+        param2=1100,
+        param3=0,
+        param4=0,
+        param5=0,
+        param6=0,
+        param7=0,
+    )
+
     await asyncio.sleep(3)
 
     print("Setting AUX 4 to 1900 µs")
-    await drone.action.set_servo(12, 1900)
-    await asyncio.sleep(3)
-
-    print("Stopping output")
-    await drone.action.set_servo(12, 0)
+    await mavlink.send_command_long(
+        mavutil.mavlink.MAV_CMD_DO_SET_SERVO,
+        param1=12,
+        param2=1900,
+        param3=0,
+        param4=0,
+        param5=0,
+        param6=0,
+        param7=0,
+    )
 
 asyncio.run(run())
