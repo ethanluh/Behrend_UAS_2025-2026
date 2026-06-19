@@ -4,12 +4,17 @@ import mathutils
 import random
 import os
 import math
+from pathlib import Path
 
 # ── Configuration ─────────────────────────────────────────────────────────────
-OUTPUT_IMAGES = "/home/ethluh/Repositories/Behrend_UAS_2025-2026/ObjectDetection/dataset/images/train/"
-OUTPUT_LABELS = "/home/ethluh/Repositories/Behrend_UAS_2025-2026/ObjectDetection/dataset/labels/train/"
-HDRI_DIR      = "/home/ethluh/Repositories/Behrend_UAS_2025-2026/ObjectDetection/blender/hdris/"
-NUM_RENDERS   = 1000
+# Paths default to this repo's layout (scripts -> blender -> ObjectDetection) and
+# can be overridden with environment variables so the script runs on any machine:
+#   OD_OUTPUT_IMAGES, OD_OUTPUT_LABELS, OD_HDRI_DIR, OD_NUM_RENDERS
+PROJECT = Path(__file__).resolve().parents[2]   # .../ObjectDetection
+OUTPUT_IMAGES = os.environ.get("OD_OUTPUT_IMAGES", str(PROJECT / "dataset/images/train") + "/")
+OUTPUT_LABELS = os.environ.get("OD_OUTPUT_LABELS", str(PROJECT / "dataset/labels/train") + "/")
+HDRI_DIR      = os.environ.get("OD_HDRI_DIR",      str(PROJECT / "blender/hdris") + "/")
+NUM_RENDERS   = int(os.environ.get("OD_NUM_RENDERS", "1000"))
 CLASS_ID      = 1           # 1 = tent
 OBJECT_NAME   = "tent.001"      # exact name from outliner
 # ──────────────────────────────────────────────────────────────────────────────
