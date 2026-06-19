@@ -49,11 +49,13 @@ def parse_args():
     return p.parse_args()
 
 
-async def run(args):
-    from camera import FrameSource
-    from detector import Detector
-    from control import Controller
+async def run(args, *, source=None, detector=None, controller=None):
+    """Run the perception->decision->control loop.
 
+    ``source``/``detector``/``controller`` can be injected (e.g. by tests with
+    stubs); when left ``None`` the real cv2/ultralytics/MAVSDK-backed objects
+    are constructed from ``args``. Heavy imports stay inside this function.
+    """
     target_class = CLASS_NAMES_DEFAULT.index(args.target_class)
     config = DecisionConfig(
         target_class=target_class,
@@ -62,11 +64,15 @@ async def run(args):
     )
     gate = SafetyGate(max_stale_frames=args.max_stale_frames)
 
-    detector = Detector(args.weights, conf=args.conf)
-    source = FrameSource(args.source)
+    if detector is None:
+        from detector import Detector
+        detector = Detector(args.weights, conf=args.conf)
+    if source is None:
+        from camera import FrameSource
+        source = FrameSource(args.source)
 
-    controller = None
-    if args.enable_control:
+    if args.enable_control and controller is None:
+        from control import Controller
         controller = Controller(args.mavlink)
         await controller.connect()
         if not await controller.read_armed_once():
@@ -143,8 +149,10 @@ def _log(decision, may_command, armed):
     if decision.action == "track":
         dx, dy = decision.offset
         vx, vy, yaw = decision.velocity_cmd
+        dist = f"{decision.distance_m:.1f}m" if decision.distance_m else "n/a"
         print(f"[{ts}] TRACK bearing={decision.bearing_deg:+.1f}deg "
-              f"offset=({dx:+.2f},{dy:+.2f}) cmd=(vx={vx:+.2f},yaw={yaw:+.2f}) "
+              f"offset=({dx:+.2f},{dy:+.2f}) dist={dist} "
+              f"cmd=(vx={vx:+.2f},yaw={yaw:+.2f}) "
               f"armed={armed} sent={may_command}")
     else:
         print(f"[{ts}] {decision.action.upper()} ({decision.reason})")
@@ -157,6 +165,7 @@ def _log_jsonl(fh, decision, detections, may_command, armed):
         "action": decision.action,
         "bearing_deg": decision.bearing_deg,
         "offset": decision.offset,
+        "distance_m": decision.distance_m,
         "velocity_cmd": decision.velocity_cmd,
         "armed": armed,
         "command_sent": may_command,
