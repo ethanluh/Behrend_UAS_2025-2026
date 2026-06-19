@@ -18,7 +18,8 @@ import math
 from dataclasses import dataclass
 
 import decision
-from decision import (DecisionConfig, focal_px_from_hfov, CLASS_REAL_HEIGHTS)
+from decision import (DecisionConfig, SearchState, next_search_state,
+                     focal_px_from_hfov, CLASS_REAL_HEIGHTS)
 
 
 @dataclass
@@ -125,15 +126,19 @@ def simulate(vehicle: VehicleState, target: Target, config: DecisionConfig,
 
     The velocity command is applied directly each tick — this exercises the
     control law itself; the SafetyGate is validated separately in
-    test_decision_logic. On a lost target the vehicle holds (zero command).
+    test_decision_logic. With the target out of view the vehicle runs the same
+    in-place yaw scan the node uses (via ``decide`` + ``SearchState``), so this
+    loop models reacquire, not just hold.
     """
     trajectory = []
+    search_state = SearchState()
     for i in range(steps):
         det = project_target_to_bbox(vehicle, target, frame_w, frame_h,
                                      config.hfov_deg)
         detections = [det] if det is not None else []
-        d = decision.decide(detections, (frame_w, frame_h), config)
+        d = decision.decide(detections, (frame_w, frame_h), config, search_state)
         cmd = d.velocity_cmd if d.velocity_cmd is not None else (0.0, 0.0, 0.0)
+        search_state = next_search_state(search_state, d)
 
         trajectory.append(SimRecord(
             t=i * dt, x=vehicle.x, y=vehicle.y, yaw=vehicle.yaw,
