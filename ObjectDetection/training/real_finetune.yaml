@@ -1,0 +1,14 @@
+# YOLO dataset config for fine-tuning on a SMALL set of real, hand-annotated
+# images (guide Part 12.2). Collect 50-100 real photos, annotate them in
+# Label Studio / Roboflow, export YOLO format, and place them under a separate
+# `real_dataset/` so they don't mix with the synthetic data.
+#
+# Fine-tune from the synthetic weights with a low learning rate:
+#   python train.py --model runs/v1/weights/best.pt \
+#       --data training/real_finetune.yaml --lr0 1e-4 --epochs 20 --batch 8
+path: ../real_dataset
+train: images/train
+val:   images/val
+
+nc: 2
+names: ["mannequin", "tent"]

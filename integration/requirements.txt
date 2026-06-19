@@ -1,0 +1,14 @@
+# Perception -> decision -> control integration node
+# Install with: pip install -r requirements.txt
+
+# Perception: YOLOv8 detector (pulls in torch/torchvision)
+ultralytics>=8.0.0
+
+# Camera frame capture
+opencv-python>=4.8.0
+
+# Flight control over MAVLink (Pixhawk / PX4)
+mavsdk>=1.4.0
+
+# Numerical support
+numpy>=1.24.0
