@@ -1,0 +1,121 @@
+"""Perception -> decision -> control node.
+
+Ties the YOLO detector (perception) to the decision logic and the Pixhawk
+controller. By default it runs in OBSERVE mode: it detects the target, computes
+the bearing/offset, and logs a corrective command WITHOUT moving the vehicle.
+
+Motion is opt-in with ``--enable-control`` and is additionally gated by
+``SafetyGate`` (vehicle armed + control enabled + a fresh detection). The
+operator must arm the vehicle manually before any command is sent.
+
+Examples:
+    # Observe only (safe default) — prints bearing, sends nothing:
+    python perception_control_node.py --weights best.pt --source 0
+
+    # Closed-loop tracking (operator arms manually first):
+    python perception_control_node.py --weights best.pt --source 0 \
+        --mavlink serial:///dev/ttyACM0:57600 --enable-control
+"""
+
+import argparse
+import asyncio
+import time
+
+from decision import (DecisionConfig, ControlGains, SafetyGate, decide,
+                      CLASS_NAMES_DEFAULT)
+
+
+def parse_args():
+    p = argparse.ArgumentParser(description=__doc__,
+                                formatter_class=argparse.RawDescriptionHelpFormatter)
+    p.add_argument("--weights", required=True)
+    p.add_argument("--source", default="0", help="camera index or video file path")
+    p.add_argument("--mavlink", default="serial:///dev/ttyACM0:57600")
+    p.add_argument("--target-class", default="mannequin",
+                   choices=CLASS_NAMES_DEFAULT)
+    p.add_argument("--hfov", type=float, default=60.0)
+    p.add_argument("--conf", type=float, default=0.25)
+    p.add_argument("--enable-control", action="store_true",
+                   help="allow sending velocity commands (default: observe only)")
+    p.add_argument("--max-speed", type=float, default=1.0)
+    p.add_argument("--max-stale-frames", type=int, default=5)
+    return p.parse_args()
+
+
+async def run(args):
+    from camera import FrameSource
+    from detector import Detector
+    from control import Controller
+
+    target_class = CLASS_NAMES_DEFAULT.index(args.target_class)
+    config = DecisionConfig(
+        target_class=target_class,
+        hfov_deg=args.hfov,
+        gains=ControlGains(max_speed=args.max_speed),
+    )
+    gate = SafetyGate(max_stale_frames=args.max_stale_frames)
+
+    detector = Detector(args.weights, conf=args.conf)
+    source = FrameSource(args.source)
+
+    controller = None
+    if args.enable_control:
+        controller = Controller(args.mavlink)
+        await controller.connect()
+        if not await controller.is_armed():
+            print("WARNING: vehicle not armed — commands will stay gated off. "
+                  "Arm manually to enable tracking.")
+        await controller.start_offboard()
+
+    frames_since_detection = 0
+    try:
+        while True:
+            frame = source.read()
+            if frame is None:
+                print("End of stream")
+                break
+            h, w = frame.shape[:2]
+
+            detections = detector.detect(frame)
+            decision = decide(detections, (w, h), config)
+
+            if decision.action == "track":
+                frames_since_detection = 0
+            else:
+                frames_since_detection += 1
+
+            armed = await controller.is_armed() if controller else False
+            may_command = gate.should_command(
+                armed, args.enable_control, frames_since_detection)
+
+            _log(decision, may_command, armed)
+
+            if controller:
+                if may_command and decision.velocity_cmd:
+                    await controller.send_velocity(*decision.velocity_cmd)
+                else:
+                    await controller.hold()
+    finally:
+        source.release()
+        if controller:
+            await controller.stop()
+
+
+def _log(decision, may_command, armed):
+    ts = time.strftime("%H:%M:%S")
+    if decision.action == "track":
+        dx, dy = decision.offset
+        vx, vy, yaw = decision.velocity_cmd
+        print(f"[{ts}] TRACK bearing={decision.bearing_deg:+.1f}deg "
+              f"offset=({dx:+.2f},{dy:+.2f}) cmd=(vx={vx:+.2f},yaw={yaw:+.2f}) "
+              f"armed={armed} sent={may_command}")
+    else:
+        print(f"[{ts}] {decision.action.upper()} ({decision.reason})")
+
+
+def main():
+    asyncio.run(run(parse_args()))
+
+
+if __name__ == "__main__":
+    main()

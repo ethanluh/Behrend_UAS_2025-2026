@@ -1,0 +1,4 @@
+# Lightweight dev/test dependencies — no GPU, no torch, no hardware.
+# Install with: pip install -r requirements-dev.txt
+pytest>=7.0.0
+PyYAML>=6.0

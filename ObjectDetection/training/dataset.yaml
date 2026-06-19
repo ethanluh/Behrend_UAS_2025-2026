@@ -1,0 +1,14 @@
+# YOLO dataset config for the synthetic mannequin/tent detector.
+# See ObjectDetection-Guide.md Part 9.
+#
+# `path` is resolved by ultralytics relative to this file's directory.
+# `../dataset` points at ObjectDetection/dataset. You may instead use an
+# absolute path (the guide recommends absolute), e.g.:
+#   path: /home/user/Behrend_UAS_2025-2026/ObjectDetection/dataset
+path: ../dataset
+train: images/train
+val:   images/val
+test:  images/test
+
+nc: 2
+names: ["mannequin", "tent"]

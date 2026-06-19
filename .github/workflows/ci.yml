@@ -1,0 +1,32 @@
+name: CI
+
+on:
+  push:
+    branches: [main, "claude/**"]
+  pull_request:
+
+jobs:
+  python:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+      - name: Install dev dependencies
+        run: pip install -r requirements-dev.txt
+      - name: Byte-compile all Python (heavy imports are lazy)
+        run: python -m compileall -q ObjectDetection integration testing px4_control tests
+      - name: Run unit tests
+        run: pytest -q
+
+  cpp:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure (geometry tests only — no OpenCV/ORT needed)
+        run: cmake -S embedded -B embedded/build
+      - name: Build geometry tests
+        run: cmake --build embedded/build --target geometry_tests
+      - name: Run geometry tests
+        run: ctest --test-dir embedded/build --output-on-failure
