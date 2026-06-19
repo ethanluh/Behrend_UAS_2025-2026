@@ -22,8 +22,9 @@ import asyncio
 import json
 import time
 
-from decision import (DecisionConfig, ControlGains, SafetyGate, decide,
-                      select_target, CLASS_NAMES_DEFAULT)
+from decision import (DecisionConfig, ControlGains, SafetyGate, SearchState,
+                      decide, next_search_state, select_target,
+                      CLASS_NAMES_DEFAULT)
 
 
 def parse_args():
@@ -83,7 +84,7 @@ async def run(args, *, source=None, detector=None, controller=None):
 
     log_fh = open(args.log_file, "a") if args.log_file else None
     writer = None  # created lazily once we know the frame size
-    frames_since_detection = 0
+    search_state = SearchState()
     try:
         while True:
             frame = source.read()
@@ -93,16 +94,13 @@ async def run(args, *, source=None, detector=None, controller=None):
             h, w = frame.shape[:2]
 
             detections = detector.detect(frame)
-            decision = decide(detections, (w, h), config)
-
-            if decision.action == "track":
-                frames_since_detection = 0
-            else:
-                frames_since_detection += 1
+            decision = decide(detections, (w, h), config, search_state)
 
             armed = controller.armed if controller else False
             may_command = gate.should_command(
-                armed, args.enable_control, frames_since_detection)
+                armed, args.enable_control,
+                search_state.frames_since_detection, decision.action)
+            search_state = next_search_state(search_state, decision)
 
             _log(decision, may_command, armed)
             if log_fh:
@@ -154,6 +152,9 @@ def _log(decision, may_command, armed):
               f"offset=({dx:+.2f},{dy:+.2f}) dist={dist} "
               f"cmd=(vx={vx:+.2f},yaw={yaw:+.2f}) "
               f"armed={armed} sent={may_command}")
+    elif decision.action == "search" and decision.velocity_cmd:
+        _, _, yaw = decision.velocity_cmd
+        print(f"[{ts}] SEARCH scanning yaw={yaw:+.2f} sent={may_command}")
     else:
         print(f"[{ts}] {decision.action.upper()} ({decision.reason})")
 

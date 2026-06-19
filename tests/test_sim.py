@@ -103,3 +103,36 @@ def test_stable_when_started_at_standoff_centered():
     assert traj[-1].distance_m == pytest.approx(2.0, abs=0.3)
     max_speed = max(abs(r.velocity_cmd[0]) for r in traj)
     assert max_speed < 0.1
+
+
+def test_reacquires_target_out_of_fov():
+    # Target starts ~45deg to the right (hfov/2 = 30deg) -> out of view. The
+    # default scan sweeps right, should bring it into frame, then track it in.
+    veh = VehicleState(x=0.0, y=0.0, yaw=0.0)
+    tgt = Target(x=4.0, y=-4.0, class_id=0)
+    traj = simulate(veh, tgt, _config(standoff=2.0), steps=600, dt=0.1)
+
+    assert traj[0].action == "search"           # not visible at the start
+    assert any(r.action == "search" for r in traj[:30])
+    assert any(r.action == "track" for r in traj)   # reacquired
+    final = traj[-1]
+    assert final.action == "track"
+    assert abs(final.bearing_deg) < 3.0
+    assert final.distance_m == pytest.approx(2.0, abs=0.5)
+
+
+def test_search_scans_in_place_then_holds():
+    # Target directly behind and a short give-up bound -> never reacquired.
+    veh = VehicleState(x=0.0, y=0.0, yaw=0.0)
+    tgt = Target(x=-5.0, y=0.0, class_id=0)
+    cfg = DecisionConfig(target_class=0, hfov_deg=HFOV, max_search_frames=10,
+                         gains=ControlGains())
+    traj = simulate(veh, tgt, cfg, steps=20, dt=0.1)
+
+    # A scan is yaw-only: position never changes, but heading sweeps.
+    assert all(r.x == 0.0 and r.y == 0.0 for r in traj)
+    assert traj[-1].yaw != traj[0].yaw
+    # First it searches, then gives up and holds (no infinite spin).
+    assert traj[0].action == "search"
+    assert traj[-1].action == "hold"
+    assert traj[-1].velocity_cmd == (0.0, 0.0, 0.0)

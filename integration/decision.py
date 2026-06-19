@@ -106,6 +106,7 @@ class ControlGains:
     deadzone: float = 0.05
     max_speed: float = 1.0      # m/s clamp on forward velocity
     max_yaw_rate: float = 0.8   # rad/s clamp on yaw rate
+    scan_yaw_rate: float = 0.4  # rad/s in-place yaw sweep while searching
 
 
 def pixel_to_velocity_cmd(dx_norm, dy_norm, gains: ControlGains, distance_m=None,
@@ -127,21 +128,45 @@ def pixel_to_velocity_cmd(dx_norm, dy_norm, gains: ControlGains, distance_m=None
     return vx, 0.0, yaw_rate
 
 
+def search_velocity_cmd(direction, gains: ControlGains):
+    """Body command for an in-place yaw scan while no target is visible.
+
+    Yaw-only (no translation), so an unlocalized search can never drive the
+    vehicle into anything. ``direction`` is the sign to scan toward (+1 = right,
+    matching ``bearing_deg``); the rate is clamped by ``max_yaw_rate``.
+    """
+    sign = 1.0 if direction >= 0 else -1.0
+    yaw_rate = _clamp(sign * gains.scan_yaw_rate,
+                      -gains.max_yaw_rate, gains.max_yaw_rate)
+    return 0.0, 0.0, yaw_rate
+
+
 # ── Safety gate ────────────────────────────────────────────────────────────
 
 @dataclass
 class SafetyGate:
     """Decides whether a motion command may be sent to the vehicle.
 
-    All conditions must hold: the vehicle is armed, the operator has explicitly
-    enabled control, and the most recent detection is fresh (not stale).
+    The vehicle must always be armed and the operator must have explicitly
+    enabled control. Beyond that, the gate depends on ``action``:
+
+    - ``"track"`` additionally requires a fresh detection (not stale) — a
+      command driving *toward* a target must be based on a recent sighting.
+    - ``"search"`` is allowed without a fresh detection: it is a stationary
+      yaw scan, safe to run while looking for a lost target.
+    - ``"hold"`` (and anything else) is never sent.
     """
     max_stale_frames: int = 5
 
-    def should_command(self, armed, control_enabled, frames_since_detection):
+    def should_command(self, armed, control_enabled, frames_since_detection,
+                       action="track"):
         if not control_enabled:
             return False
         if not armed:
+            return False
+        if action == "search":
+            return True
+        if action != "track":
             return False
         if frames_since_detection > self.max_stale_frames:
             return False
@@ -155,7 +180,30 @@ class DecisionConfig:
     target_class: int = 0           # 0 = mannequin
     hfov_deg: float = 60.0
     standoff_m: float = 2.0         # desired distance to hold from the target
+    max_search_frames: int = 80     # frames to scan before giving up (~8s @ 10Hz)
     gains: ControlGains = field(default_factory=ControlGains)
+
+
+@dataclass
+class SearchState:
+    """Caller-held state that drives the search scan, kept out of ``decide`` so
+    that ``decide`` stays a pure function of its inputs.
+
+    ``frames_since_detection`` counts frames since the target was last tracked;
+    ``last_bearing_sign`` is the side it was last seen on (+1 right, -1 left), so
+    the scan sweeps back toward it. Defaults: never seen, scan right.
+    """
+    frames_since_detection: int = 0
+    last_bearing_sign: float = 1.0
+
+
+def next_search_state(state: SearchState, decision: "Decision") -> SearchState:
+    """Advance the search state from the latest decision (shared by node + sim)."""
+    if decision.action == "track":
+        sign = 1.0 if (decision.bearing_deg or 0.0) >= 0 else -1.0
+        return SearchState(frames_since_detection=0, last_bearing_sign=sign)
+    return SearchState(frames_since_detection=state.frames_since_detection + 1,
+                       last_bearing_sign=state.last_bearing_sign)
 
 
 @dataclass
@@ -176,16 +224,29 @@ def select_target(detections: List[Detection], target_class: int) -> Optional[De
     return max(candidates, key=lambda d: d[1])
 
 
-def decide(detections, frame_size, config: DecisionConfig) -> Decision:
+def decide(detections, frame_size, config: DecisionConfig,
+           search_state: Optional[SearchState] = None) -> Decision:
     """Turn a frame's detections into a Decision (offset/bearing/velocity).
 
-    Always computes the velocity command for the selected target; whether it is
-    actually *sent* is the caller's responsibility via ``SafetyGate``.
+    With a target visible, returns a ``track`` decision. With none visible it
+    returns a ``search`` decision carrying an in-place yaw-scan command (toward
+    the side the target was last seen, via ``search_state``) until
+    ``max_search_frames`` frames have elapsed, after which it gives up and
+    returns ``hold`` (zero command) so the vehicle never spins forever.
+
+    Whether a command is actually *sent* remains the caller's responsibility via
+    ``SafetyGate``.
     """
     frame_w, frame_h = frame_size
     target = select_target(detections, config.target_class)
     if target is None:
-        return Decision(action="search", reason="no target detected")
+        state = search_state if search_state is not None else SearchState()
+        if state.frames_since_detection > config.max_search_frames:
+            return Decision(action="hold", velocity_cmd=(0.0, 0.0, 0.0),
+                            reason="search timeout")
+        scan = search_velocity_cmd(state.last_bearing_sign, config.gains)
+        return Decision(action="search", velocity_cmd=scan,
+                        reason="scanning for target")
 
     cls_id, conf, x1, y1, x2, y2 = target
     cx, cy = box_center(x1, y1, x2, y2)
