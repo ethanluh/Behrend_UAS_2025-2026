@@ -215,6 +215,50 @@ def to_yolo(x1, y1, x2, y2):
     return cx, cy, w, h
 
 
+# ── Optional: composite over real backgrounds (sim-to-real) ────────────────────
+# Default OFF — the working opaque-render path above is untouched. When enabled,
+# renders with a transparent film so the subject can be alpha-composited over
+# random real photos (guide Part 12.1), narrowing the sim-to-real gap. Uses only
+# Blender-bundled numpy (no OpenCV). VERIFY IN BLENDER before a full run — this
+# path is not exercised by CI.
+import numpy as np
+
+COMPOSITE_BACKGROUND = False
+BACKGROUND_DIR = "/absolute/path/to/project/backgrounds/"
+
+if COMPOSITE_BACKGROUND:
+    scene.render.film_transparent = True
+    _bg_files = [
+        os.path.join(BACKGROUND_DIR, f)
+        for f in os.listdir(BACKGROUND_DIR)
+        if f.lower().endswith((".jpg", ".jpeg", ".png"))
+    ]
+    assert _bg_files, f"No backgrounds found in {BACKGROUND_DIR}"
+
+
+def composite_on_background(render_path):
+    """Alpha-composite an RGBA render over a random real background (numpy)."""
+    fg = bpy.data.images.load(render_path, check_existing=False)
+    w, h = fg.size
+    fg_px = np.array(fg.pixels[:]).reshape(h, w, 4)
+
+    bg = bpy.data.images.load(random.choice(_bg_files), check_existing=False)
+    bw, bh = bg.size
+    bg_px = np.array(bg.pixels[:]).reshape(bh, bw, 4)
+    # Nearest-neighbour resize of the background to the render size.
+    ys = np.linspace(0, bh - 1, h).astype(int)
+    xs = np.linspace(0, bw - 1, w).astype(int)
+    bg_rs = bg_px[ys][:, xs]
+
+    alpha = fg_px[:, :, 3:4]
+    fg_px[:, :, :3] = alpha * fg_px[:, :, :3] + (1.0 - alpha) * bg_rs[:, :, :3]
+    fg_px[:, :, 3] = 1.0
+    fg.pixels = fg_px.reshape(-1)
+    fg.filepath_raw = render_path
+    fg.file_format = "PNG"
+    fg.save()
+
+
 # ── Render Loop ───────────────────────────────────────────────────────────────
 
 for i in range(NUM_RENDERS):
@@ -259,6 +303,9 @@ for i in range(NUM_RENDERS):
     img_path = os.path.join(OUTPUT_IMAGES, f"mannequin_{i:05d}.png")
     scene.render.filepath = img_path
     bpy.ops.render.render(write_still=True)
+
+    if COMPOSITE_BACKGROUND:
+        composite_on_background(img_path)
 
     # 6. Compute bbox using the MESH object (not armature) — bound_box
     #    reflects deformed mesh geometry, not the skeleton.

@@ -27,6 +27,9 @@ def parse_args():
                    help="reduce to 8 if you run out of VRAM")
     p.add_argument("--device", default="cpu",
                    help='GPU index (e.g. "0") or "cpu"')
+    p.add_argument("--lr0", type=float, default=None,
+                   help="initial learning rate; lower it (e.g. 1e-4) when "
+                        "fine-tuning from existing weights")
     p.add_argument("--project", default=str(here / "runs"))
     p.add_argument("--name", default="v1")
     return p.parse_args()
@@ -38,7 +41,7 @@ def main():
     from ultralytics import YOLO
 
     model = YOLO(args.model)
-    model.train(
+    train_kwargs = dict(
         data=args.data,
         epochs=args.epochs,
         imgsz=args.imgsz,
@@ -48,6 +51,9 @@ def main():
         name=args.name,
         augment=True,   # mosaic, flips, color jitter, etc.
     )
+    if args.lr0 is not None:
+        train_kwargs["lr0"] = args.lr0
+    model.train(**train_kwargs)
     print(f"Training complete. Best weights: {args.project}/{args.name}/weights/best.pt")
 
 

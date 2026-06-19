@@ -59,6 +59,48 @@ def get_2d_bbox(obj, camera, scene):
 def to_yolo(x1, y1, x2, y2):
     return ((x1+x2)/2)/res_x, ((y1+y2)/2)/res_y, (x2-x1)/res_x, (y2-y1)/res_y
 
+# ── Optional: composite over real backgrounds (sim-to-real) ────────────────────
+# Default OFF — the working opaque-render path is untouched. When enabled, renders
+# with a transparent film so the tent can be alpha-composited over random real
+# photos (guide Part 12.1). Uses only Blender-bundled numpy. VERIFY IN BLENDER
+# before a full run — this path is not exercised by CI.
+import numpy as np
+
+COMPOSITE_BACKGROUND = False
+BACKGROUND_DIR = "/absolute/path/to/project/backgrounds/"
+
+if COMPOSITE_BACKGROUND:
+    scene.render.film_transparent = True
+    _bg_files = [
+        os.path.join(BACKGROUND_DIR, f)
+        for f in os.listdir(BACKGROUND_DIR)
+        if f.lower().endswith((".jpg", ".jpeg", ".png"))
+    ]
+    assert _bg_files, f"No backgrounds found in {BACKGROUND_DIR}"
+
+
+def composite_on_background(render_path):
+    """Alpha-composite an RGBA render over a random real background (numpy)."""
+    fg = bpy.data.images.load(render_path, check_existing=False)
+    w, h = fg.size
+    fg_px = np.array(fg.pixels[:]).reshape(h, w, 4)
+
+    bg = bpy.data.images.load(random.choice(_bg_files), check_existing=False)
+    bw, bh = bg.size
+    bg_px = np.array(bg.pixels[:]).reshape(bh, bw, 4)
+    ys = np.linspace(0, bh - 1, h).astype(int)
+    xs = np.linspace(0, bw - 1, w).astype(int)
+    bg_rs = bg_px[ys][:, xs]
+
+    alpha = fg_px[:, :, 3:4]
+    fg_px[:, :, :3] = alpha * fg_px[:, :, :3] + (1.0 - alpha) * bg_rs[:, :, :3]
+    fg_px[:, :, 3] = 1.0
+    fg.pixels = fg_px.reshape(-1)
+    fg.filepath_raw = render_path
+    fg.file_format = "PNG"
+    fg.save()
+
+
 for i in range(NUM_RENDERS):
     obj.location.x        = random.uniform(-1.5, 1.5)
     obj.location.y        = random.uniform(-1.5, 1.5)
@@ -83,6 +125,9 @@ for i in range(NUM_RENDERS):
     img_path = os.path.join(OUTPUT_IMAGES, f"tent_{i:05d}.png")
     scene.render.filepath = img_path
     bpy.ops.render.render(write_still=True)
+
+    if COMPOSITE_BACKGROUND:
+        composite_on_background(img_path)
 
     bbox = get_2d_bbox(obj, camera, scene)
     if bbox is None or (bbox[2]-bbox[0]) < 5 or (bbox[3]-bbox[1]) < 5:

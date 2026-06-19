@@ -19,10 +19,11 @@ Examples:
 
 import argparse
 import asyncio
+import json
 import time
 
 from decision import (DecisionConfig, ControlGains, SafetyGate, decide,
-                      CLASS_NAMES_DEFAULT)
+                      select_target, CLASS_NAMES_DEFAULT)
 
 
 def parse_args():
@@ -39,6 +40,12 @@ def parse_args():
                    help="allow sending velocity commands (default: observe only)")
     p.add_argument("--max-speed", type=float, default=1.0)
     p.add_argument("--max-stale-frames", type=int, default=5)
+    p.add_argument("--show", action="store_true",
+                   help="display an annotated preview window")
+    p.add_argument("--record", default=None,
+                   help="write an annotated video to this path (e.g. flight.mp4)")
+    p.add_argument("--log-file", default=None,
+                   help="append per-frame decision/telemetry records as JSONL")
     return p.parse_args()
 
 
@@ -68,6 +75,8 @@ async def run(args):
         controller.start_armed_watch()
         await controller.start_offboard()
 
+    log_fh = open(args.log_file, "a") if args.log_file else None
+    writer = None  # created lazily once we know the frame size
     frames_since_detection = 0
     try:
         while True:
@@ -90,6 +99,8 @@ async def run(args):
                 armed, args.enable_control, frames_since_detection)
 
             _log(decision, may_command, armed)
+            if log_fh:
+                _log_jsonl(log_fh, decision, detections, may_command, armed)
 
             if controller:
                 if may_command and decision.velocity_cmd:
@@ -97,10 +108,32 @@ async def run(args):
                 else:
                     await controller.hold()
 
+            if args.show or args.record:
+                import cv2
+                from visualize import draw_overlay
+                target = select_target(detections, config.target_class)
+                annotated = draw_overlay(frame, detections, decision, target)
+                if args.record:
+                    if writer is None:
+                        fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+                        writer = cv2.VideoWriter(args.record, fourcc, 20.0, (w, h))
+                    writer.write(annotated)
+                if args.show:
+                    cv2.imshow("perception-control", annotated)
+                    if cv2.waitKey(1) & 0xFF == ord("q"):
+                        break
+
             # Stay cooperative even in observe-only mode (no awaits above).
             await asyncio.sleep(0)
     finally:
         source.release()
+        if writer is not None:
+            writer.release()
+        if log_fh:
+            log_fh.close()
+        if args.show:
+            import cv2
+            cv2.destroyAllWindows()
         if controller:
             await controller.stop()
 
@@ -115,6 +148,22 @@ def _log(decision, may_command, armed):
               f"armed={armed} sent={may_command}")
     else:
         print(f"[{ts}] {decision.action.upper()} ({decision.reason})")
+
+
+def _log_jsonl(fh, decision, detections, may_command, armed):
+    """Append one structured JSON record per frame for post-flight review."""
+    record = {
+        "ts": time.time(),
+        "action": decision.action,
+        "bearing_deg": decision.bearing_deg,
+        "offset": decision.offset,
+        "velocity_cmd": decision.velocity_cmd,
+        "armed": armed,
+        "command_sent": may_command,
+        "num_detections": len(detections),
+    }
+    fh.write(json.dumps(record) + "\n")
+    fh.flush()
 
 
 def main():

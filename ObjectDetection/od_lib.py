@@ -50,6 +50,30 @@ def yolo_to_xyxy(cx, cy, w, h, img_w, img_h):
     return x1, y1, x2, y2
 
 
+def flip_box_horizontal(cx, cy, w, h):
+    """Mirror a normalized YOLO box across the vertical axis.
+
+    Width/height and the y-center are unchanged; only the x-center reflects
+    (``cx -> 1 - cx``). Applying it twice is the identity. Used by the offline
+    augmenter when an image is horizontally flipped.
+    """
+    return 1.0 - cx, cy, w, h
+
+
+def clip_box(cx, cy, w, h):
+    """Clip a normalized YOLO box to the image so all corners stay in [0, 1].
+
+    Recomputes the center/size from the clipped corners. Returns
+    ``(cx, cy, w, h)``; callers should drop boxes whose clipped ``w`` or ``h``
+    is non-positive (fully outside the frame).
+    """
+    x1 = max(0.0, cx - w / 2.0)
+    y1 = max(0.0, cy - h / 2.0)
+    x2 = min(1.0, cx + w / 2.0)
+    y2 = min(1.0, cy + h / 2.0)
+    return (x1 + x2) / 2.0, (y1 + y2) / 2.0, x2 - x1, y2 - y1
+
+
 # ── YOLO label parsing ─────────────────────────────────────────────────────
 
 def parse_label_line(line):
