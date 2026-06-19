@@ -62,9 +62,10 @@ async def run(args):
     if args.enable_control:
         controller = Controller(args.mavlink)
         await controller.connect()
-        if not await controller.is_armed():
+        if not await controller.read_armed_once():
             print("WARNING: vehicle not armed — commands will stay gated off. "
                   "Arm manually to enable tracking.")
+        controller.start_armed_watch()
         await controller.start_offboard()
 
     frames_since_detection = 0
@@ -84,7 +85,7 @@ async def run(args):
             else:
                 frames_since_detection += 1
 
-            armed = await controller.is_armed() if controller else False
+            armed = controller.armed if controller else False
             may_command = gate.should_command(
                 armed, args.enable_control, frames_since_detection)
 
@@ -95,6 +96,9 @@ async def run(args):
                     await controller.send_velocity(*decision.velocity_cmd)
                 else:
                     await controller.hold()
+
+            # Stay cooperative even in observe-only mode (no awaits above).
+            await asyncio.sleep(0)
     finally:
         source.release()
         if controller:

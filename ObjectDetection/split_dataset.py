@@ -17,6 +17,7 @@ Examples:
 import argparse
 import os
 import shutil
+import sys
 from pathlib import Path
 
 import od_lib
@@ -75,6 +76,11 @@ def main():
             lbl = od_lib.label_path_for_image(fname, str(args.src_lbl))
             if os.path.exists(lbl):
                 shutil.move(lbl, str(lbl_dst / os.path.basename(lbl)))
+            else:
+                # Surface dataset corruption rather than silently producing an
+                # unlabeled eval sample.
+                print(f"WARNING: no label for {fname}; moved image into "
+                      f"{split}/ without a label", file=sys.stderr)
 
 
 if __name__ == "__main__":
