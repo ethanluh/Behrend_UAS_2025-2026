@@ -96,11 +96,15 @@ async def run(args, *, source=None, detector=None, controller=None):
             detections = detector.detect(frame)
             decision = decide(detections, (w, h), config, search_state)
 
+            # Advance the search state *before* gating so a reacquired target
+            # (track) is evaluated with frames_since_detection == 0 — otherwise
+            # the first track command after a long search would be gated off as
+            # stale for one tick.
+            search_state = next_search_state(search_state, decision)
             armed = controller.armed if controller else False
             may_command = gate.should_command(
                 armed, args.enable_control,
                 search_state.frames_since_detection, decision.action)
-            search_state = next_search_state(search_state, decision)
 
             _log(decision, may_command, armed)
             if log_fh:
