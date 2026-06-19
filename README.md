@@ -63,6 +63,12 @@ cmake -S embedded -B embedded/build && cmake --build embedded/build --target geo
 ctest --test-dir embedded/build
 ```
 
+## Simulation
+
+Validate the control law before flying — see [`docs/SIMULATION.md`](docs/SIMULATION.md):
+a pure in-repo closed-loop validator (`integration/sim_run.py`, runs in CI) and a
+PX4 SITL path for the real flight stack.
+
 ## Safety
 
 The integration node **never arms the vehicle** and defaults to *observe-only*:
