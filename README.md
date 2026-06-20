@@ -81,3 +81,10 @@ requires the explicit `--enable-control` flag **and** passing the `SafetyGate`
 [`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs on every push/PR:
 byte-compiles all Python, runs the pytest suite, and builds + runs the C++
 geometry tests — all on a clean runner with no GPU, Blender, or hardware.
+
+## Contributing
+
+`main` is protected; all work lands via PR from a feature branch. Name branches
+`<type>/<short-description>` (e.g. `feature/new-sign-in`,
+`fix/safety-gate-stale-detection`). See [`CONTRIBUTING.md`](CONTRIBUTING.md) for
+the branch-naming convention and contribution workflow.
