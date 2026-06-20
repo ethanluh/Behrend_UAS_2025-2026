@@ -73,3 +73,5 @@ GPU training, ONNX export, live camera, live MAVLink flight.
 - Development happens on feature branches with PRs; CI must stay green
   (`.github/workflows/ci.yml` byte-compiles all Python, runs pytest, and
   builds + runs the C++ geometry tests on a clean runner).
+- Name branches `<type>/<short-description>` (e.g. `feature/new-sign-in`,
+  `fix/safety-gate-stale-detection`); see `CONTRIBUTING.md` for the full list.
